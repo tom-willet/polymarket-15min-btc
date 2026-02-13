@@ -1,0 +1,16 @@
+[Unit]
+Description=Polymarket Next.js Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/polymarket-agent/web
+Environment=NODE_ENV=production
+Environment=AGENT_API_BASE_URL=http://127.0.0.1:8080
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

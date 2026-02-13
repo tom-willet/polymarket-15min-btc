@@ -1,0 +1,161 @@
+:root {
+  --bg: #0e1116;
+  --bg-alt: #151a22;
+  --text: #ebf0f7;
+  --muted: #9fb0c6;
+  --line: #273345;
+  --ok: #2fd784;
+  --warn: #ffd166;
+  --accent: #47b8ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: radial-gradient(circle at top, #1a2433, var(--bg));
+  color: var(--text);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 20px 56px;
+}
+
+h1 {
+  font-size: 1.8rem;
+  margin: 0 0 8px;
+}
+
+p {
+  color: var(--muted);
+}
+
+.panel {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-alt) 85%, #000 15%);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 1px solid var(--line);
+}
+
+.badge.ok {
+  color: var(--ok);
+}
+
+.code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+.events {
+  max-height: 300px;
+  overflow: auto;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.events li {
+  margin-bottom: 10px;
+}
+
+.chartBox {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  min-height: 190px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chartSvg {
+  width: 100%;
+  height: 180px;
+}
+
+.chartLegend {
+  display: flex;
+  gap: 14px;
+  align-self: flex-start;
+  margin-bottom: 8px;
+}
+
+.chartLegendItem {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.dot.yes {
+  background: #2fd784;
+}
+
+.dot.no {
+  background: #ff7f7f;
+}
+
+.dot.btc {
+  background: #ffd166;
+}
+
+.dot.odds {
+  background: #47b8ff;
+}
+
+.tableWrap {
+  overflow: auto;
+  max-height: 520px;
+}
+
+.logTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.logTable th,
+.logTable td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.logTable thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-alt);
+  z-index: 1;
+}

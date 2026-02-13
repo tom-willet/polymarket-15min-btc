@@ -1,0 +1,15 @@
+[Unit]
+Description=Polymarket Agent Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/polymarket-agent
+EnvironmentFile=/opt/polymarket-agent/.env
+ExecStart=/opt/polymarket-agent/.venv/bin/python -m src.polymarket_agent.service
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

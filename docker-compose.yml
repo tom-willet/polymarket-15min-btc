@@ -1,0 +1,22 @@
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    restart: always
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      - AGENT_API_BASE_URL=http://agent:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - agent
+    restart: always
