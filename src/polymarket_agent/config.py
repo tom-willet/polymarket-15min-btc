@@ -34,6 +34,27 @@ class Config:
     polymarket_move_log_cooldown_seconds: float
     paper_trade_logging_enabled: bool
     paper_trade_log_path: str
+    paper_trade_notional_usd: float
+    paper_entry_slippage_bps: float
+    paper_dynamic_slippage_enabled: bool
+    paper_dynamic_slippage_edge_factor_bps: float
+    paper_dynamic_slippage_confidence_factor_bps: float
+    paper_dynamic_slippage_expiry_factor_bps: float
+    paper_max_slippage_bps: float
+    paper_gas_fee_usd_per_side: float
+    paper_adverse_selection_bps: float
+    paper_min_notional_usd: float
+    paper_min_net_edge_bps: float
+    paper_edge_strength_to_bps: float
+    strategy_mode: str
+    btc_updown_shadow_mode: bool
+    btc_updown_live_enabled: bool
+    btc_updown_min_confidence_to_trade: float
+    btc_updown_min_score_to_trade: float
+    btc_updown_max_entry_price: float
+    btc_updown_kelly_fraction: float
+    btc_updown_max_trade_size_usd: float
+    btc_updown_min_trade_size_usd: float
 
 
 
@@ -120,4 +141,68 @@ def load_config() -> Config:
             "PAPER_TRADE_LOG_PATH",
             "logs/paper_trades.jsonl",
         ).strip(),
+        paper_trade_notional_usd=float(
+            os.getenv("PAPER_TRADE_NOTIONAL_USD", "25")
+        ),
+        paper_entry_slippage_bps=float(
+            os.getenv("PAPER_ENTRY_SLIPPAGE_BPS", "50")
+        ),
+        paper_dynamic_slippage_enabled=_bool_from_env(
+            os.getenv("PAPER_DYNAMIC_SLIPPAGE_ENABLED"),
+            False,
+        ),
+        paper_dynamic_slippage_edge_factor_bps=float(
+            os.getenv("PAPER_DYNAMIC_SLIPPAGE_EDGE_FACTOR_BPS", "25")
+        ),
+        paper_dynamic_slippage_confidence_factor_bps=float(
+            os.getenv("PAPER_DYNAMIC_SLIPPAGE_CONFIDENCE_FACTOR_BPS", "20")
+        ),
+        paper_dynamic_slippage_expiry_factor_bps=float(
+            os.getenv("PAPER_DYNAMIC_SLIPPAGE_EXPIRY_FACTOR_BPS", "30")
+        ),
+        paper_max_slippage_bps=float(
+            os.getenv("PAPER_MAX_SLIPPAGE_BPS", "200")
+        ),
+        paper_gas_fee_usd_per_side=float(
+            os.getenv("PAPER_GAS_FEE_USD_PER_SIDE", "0.05")
+        ),
+        paper_adverse_selection_bps=float(
+            os.getenv("PAPER_ADVERSE_SELECTION_BPS", "30")
+        ),
+        paper_min_notional_usd=float(
+            os.getenv("PAPER_MIN_NOTIONAL_USD", "1")
+        ),
+        paper_min_net_edge_bps=float(
+            os.getenv("PAPER_MIN_NET_EDGE_BPS", "0")
+        ),
+        paper_edge_strength_to_bps=float(
+            os.getenv("PAPER_EDGE_STRENGTH_TO_BPS", "1000")
+        ),
+        strategy_mode=os.getenv("STRATEGY_MODE", "classic").strip().lower(),
+        btc_updown_shadow_mode=_bool_from_env(
+            os.getenv("BTC_UPDOWN_SHADOW_MODE"),
+            True,
+        ),
+        btc_updown_live_enabled=_bool_from_env(
+            os.getenv("BTC_UPDOWN_LIVE_ENABLED"),
+            False,
+        ),
+        btc_updown_min_confidence_to_trade=float(
+            os.getenv("BTC_UPDOWN_MIN_CONFIDENCE_TO_TRADE", "0.35")
+        ),
+        btc_updown_min_score_to_trade=float(
+            os.getenv("BTC_UPDOWN_MIN_SCORE_TO_TRADE", "0.2")
+        ),
+        btc_updown_max_entry_price=float(
+            os.getenv("BTC_UPDOWN_MAX_ENTRY_PRICE", "0.85")
+        ),
+        btc_updown_kelly_fraction=float(
+            os.getenv("BTC_UPDOWN_KELLY_FRACTION", "0.3")
+        ),
+        btc_updown_max_trade_size_usd=float(
+            os.getenv("BTC_UPDOWN_MAX_TRADE_SIZE_USD", "100")
+        ),
+        btc_updown_min_trade_size_usd=float(
+            os.getenv("BTC_UPDOWN_MIN_TRADE_SIZE_USD", "1")
+        ),
     )

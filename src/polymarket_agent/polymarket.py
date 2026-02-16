@@ -316,6 +316,7 @@ class PolymarketOddsTracker:
                 value = payload.get("price")
                 if isinstance(value, str):
                     self._last_known_btc_price = float(value)
+                    state.set_binance_price(self._last_known_btc_price, now_ts)
                     return self._last_known_btc_price
         except (TypeError, ValueError, httpx.HTTPError):
             return self._last_known_btc_price

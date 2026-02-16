@@ -29,6 +29,8 @@ class AgentState:
         self._polymarket_yes_price: float | None = None
         self._polymarket_no_price: float | None = None
         self._polymarket_last_update_ts: float | None = None
+        self._binance_price: float | None = None
+        self._binance_price_ts: float | None = None
         self._last_decision: dict | None = None
         self._events: Deque[AgentEvent] = deque(maxlen=200)
         self._paper_trades: Deque[dict] = deque(maxlen=500)
@@ -81,6 +83,18 @@ class AgentState:
                 "last_update_ts": self._polymarket_last_update_ts,
             }
 
+    def set_binance_price(self, price: float, update_ts: float) -> None:
+        with self._lock:
+            self._binance_price = price
+            self._binance_price_ts = update_ts
+
+    def get_binance_price_snapshot(self) -> dict:
+        with self._lock:
+            return {
+                "price": self._binance_price,
+                "ts": self._binance_price_ts,
+            }
+
     def set_kill_switch(self, enabled: bool) -> None:
         with self._lock:
             self._kill_switch_enabled = enabled
@@ -122,6 +136,8 @@ class AgentState:
                 "polymarket_yes_price": self._polymarket_yes_price,
                 "polymarket_no_price": self._polymarket_no_price,
                 "polymarket_last_update_ts": self._polymarket_last_update_ts,
+                "binance_price": self._binance_price,
+                "binance_price_ts": self._binance_price_ts,
                 "last_decision": self._last_decision,
                 "paper_trades": list(self._paper_trades),
                 "events": [
