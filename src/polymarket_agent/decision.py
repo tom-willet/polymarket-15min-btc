@@ -5,22 +5,51 @@ from collections import deque
 from statistics import fmean, pstdev
 
 from .models import Tick
-from .strategies import MeanReversionStrategy, MomentumStrategy, Strategy
+from .strategies import (
+    BTCUpdownConfig,
+    BTCUpdownStrategy,
+    MeanReversionStrategy,
+    MomentumStrategy,
+    Strategy,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class DecisionRouter:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        strategy_mode: str = "classic",
+        btc_updown_shadow_mode: bool = True,
+        btc_updown_live_enabled: bool = False,
+        btc_updown_config: BTCUpdownConfig | None = None,
+    ) -> None:
         self.prices: deque[float] = deque(maxlen=240)
+        self._strategy_mode = strategy_mode
+        self._btc_updown_shadow_mode = btc_updown_shadow_mode
+        self._btc_updown_live_enabled = btc_updown_live_enabled
+        self._btc_updown = BTCUpdownStrategy(btc_updown_config or BTCUpdownConfig())
         self.strategies: list[Strategy] = [
             MomentumStrategy(),
             MeanReversionStrategy(),
         ]
 
-    def on_tick(self, tick: Tick) -> tuple[str, dict] | None:
+    def on_tick(self, tick: Tick, extra_state: dict | None = None) -> tuple[str, dict] | None:
         self.prices.append(tick.price)
         state = self._build_state(tick)
+        if extra_state:
+            state.update(extra_state)
+
+        if self._btc_updown_shadow_mode or self._strategy_mode == "btc_updown":
+            shadow = self._btc_updown.evaluate_shadow(state)
+            if shadow is not None:
+                logger.info("Shadow strategy=btc_updown candidate=%s", shadow)
+                if self._strategy_mode == "btc_updown" and self._btc_updown_live_enabled:
+                    return shadow["action"], shadow
+
+        if self._strategy_mode == "btc_updown":
+            return None
 
         for strategy in self.strategies:
             decision = strategy.evaluate(state)

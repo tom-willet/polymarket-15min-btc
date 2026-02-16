@@ -36,6 +36,27 @@ def test_load_config_parses_expected_values(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("POLYMARKET_MOVE_THRESHOLD_PCT", "3.0")
     monkeypatch.setenv("POLYMARKET_MOVE_MIN_ABS_DELTA", "0.03")
     monkeypatch.setenv("POLYMARKET_MOVE_LOG_COOLDOWN_SECONDS", "5.0")
+    monkeypatch.setenv("PAPER_TRADE_NOTIONAL_USD", "50")
+    monkeypatch.setenv("PAPER_ENTRY_SLIPPAGE_BPS", "75")
+    monkeypatch.setenv("PAPER_DYNAMIC_SLIPPAGE_ENABLED", "true")
+    monkeypatch.setenv("PAPER_DYNAMIC_SLIPPAGE_EDGE_FACTOR_BPS", "30")
+    monkeypatch.setenv("PAPER_DYNAMIC_SLIPPAGE_CONFIDENCE_FACTOR_BPS", "15")
+    monkeypatch.setenv("PAPER_DYNAMIC_SLIPPAGE_EXPIRY_FACTOR_BPS", "10")
+    monkeypatch.setenv("PAPER_MAX_SLIPPAGE_BPS", "250")
+    monkeypatch.setenv("PAPER_GAS_FEE_USD_PER_SIDE", "0.07")
+    monkeypatch.setenv("PAPER_ADVERSE_SELECTION_BPS", "40")
+    monkeypatch.setenv("PAPER_MIN_NOTIONAL_USD", "2")
+    monkeypatch.setenv("PAPER_MIN_NET_EDGE_BPS", "15")
+    monkeypatch.setenv("PAPER_EDGE_STRENGTH_TO_BPS", "1200")
+    monkeypatch.setenv("STRATEGY_MODE", "btc_updown")
+    monkeypatch.setenv("BTC_UPDOWN_SHADOW_MODE", "true")
+    monkeypatch.setenv("BTC_UPDOWN_LIVE_ENABLED", "false")
+    monkeypatch.setenv("BTC_UPDOWN_MIN_CONFIDENCE_TO_TRADE", "0.4")
+    monkeypatch.setenv("BTC_UPDOWN_MIN_SCORE_TO_TRADE", "0.25")
+    monkeypatch.setenv("BTC_UPDOWN_MAX_ENTRY_PRICE", "0.8")
+    monkeypatch.setenv("BTC_UPDOWN_KELLY_FRACTION", "0.2")
+    monkeypatch.setenv("BTC_UPDOWN_MAX_TRADE_SIZE_USD", "80")
+    monkeypatch.setenv("BTC_UPDOWN_MIN_TRADE_SIZE_USD", "2")
 
     cfg = load_config()
 
@@ -63,6 +84,27 @@ def test_load_config_parses_expected_values(monkeypatch: pytest.MonkeyPatch) -> 
     assert cfg.polymarket_move_threshold_pct == 3.0
     assert cfg.polymarket_move_min_abs_delta == 0.03
     assert cfg.polymarket_move_log_cooldown_seconds == 5.0
+    assert cfg.paper_trade_notional_usd == 50.0
+    assert cfg.paper_entry_slippage_bps == 75.0
+    assert cfg.paper_dynamic_slippage_enabled is True
+    assert cfg.paper_dynamic_slippage_edge_factor_bps == 30.0
+    assert cfg.paper_dynamic_slippage_confidence_factor_bps == 15.0
+    assert cfg.paper_dynamic_slippage_expiry_factor_bps == 10.0
+    assert cfg.paper_max_slippage_bps == 250.0
+    assert cfg.paper_gas_fee_usd_per_side == 0.07
+    assert cfg.paper_adverse_selection_bps == 40.0
+    assert cfg.paper_min_notional_usd == 2.0
+    assert cfg.paper_min_net_edge_bps == 15.0
+    assert cfg.paper_edge_strength_to_bps == 1200.0
+    assert cfg.strategy_mode == "btc_updown"
+    assert cfg.btc_updown_shadow_mode is True
+    assert cfg.btc_updown_live_enabled is False
+    assert cfg.btc_updown_min_confidence_to_trade == 0.4
+    assert cfg.btc_updown_min_score_to_trade == 0.25
+    assert cfg.btc_updown_max_entry_price == 0.8
+    assert cfg.btc_updown_kelly_fraction == 0.2
+    assert cfg.btc_updown_max_trade_size_usd == 80.0
+    assert cfg.btc_updown_min_trade_size_usd == 2.0
 
 
 def test_load_config_requires_chainlink_credentials(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -5,3 +5,8 @@ __pycache__/
 .DS_Store
 web/node_modules/
 web/.next/
+logs/*.jsonl
+logs/*.out
+logs/*.log
+logs/latest_*_path.txt
+logs/latest_postfix_soak_start_ts.txt

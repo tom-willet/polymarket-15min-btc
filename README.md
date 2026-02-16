@@ -96,6 +96,27 @@ Dashboard runs on `http://127.0.0.1:3000`.
 - `AGENT_API_PORT` default `8080`.
 - `MAX_TRADES_PER_ROUND` default `2`.
 - `TRADE_COOLDOWN_SECONDS` default `8`.
+- `PAPER_TRADE_NOTIONAL_USD` default `25`.
+- `PAPER_ENTRY_SLIPPAGE_BPS` default `50`.
+- `PAPER_DYNAMIC_SLIPPAGE_ENABLED` default `false`.
+- `PAPER_DYNAMIC_SLIPPAGE_EDGE_FACTOR_BPS` default `25`.
+- `PAPER_DYNAMIC_SLIPPAGE_CONFIDENCE_FACTOR_BPS` default `20`.
+- `PAPER_DYNAMIC_SLIPPAGE_EXPIRY_FACTOR_BPS` default `30`.
+- `PAPER_MAX_SLIPPAGE_BPS` default `200`.
+- `PAPER_GAS_FEE_USD_PER_SIDE` default `0.05`.
+- `PAPER_ADVERSE_SELECTION_BPS` default `30`.
+- `PAPER_MIN_NOTIONAL_USD` default `1`.
+- `PAPER_MIN_NET_EDGE_BPS` default `0` (when > 0, blocks entries with estimated net edge below threshold).
+- `PAPER_EDGE_STRENGTH_TO_BPS` default `1000` (conversion factor from odds edge strength to expected edge bps).
+- `STRATEGY_MODE` default `classic` (set `btc_updown` to run only the BTC up/down strategy).
+- `BTC_UPDOWN_SHADOW_MODE` default `true` (logs candidate decisions even when not live-routing).
+- `BTC_UPDOWN_LIVE_ENABLED` default `false` (must be true to execute BTC up/down decisions when `STRATEGY_MODE=btc_updown`).
+- `BTC_UPDOWN_MIN_CONFIDENCE_TO_TRADE` default `0.35`.
+- `BTC_UPDOWN_MIN_SCORE_TO_TRADE` default `0.2`.
+- `BTC_UPDOWN_MAX_ENTRY_PRICE` default `0.85`.
+- `BTC_UPDOWN_KELLY_FRACTION` default `0.3`.
+- `BTC_UPDOWN_MAX_TRADE_SIZE_USD` default `100`.
+- `BTC_UPDOWN_MIN_TRADE_SIZE_USD` default `1`.
 
 ### Web (`web/.env.local`)
 
@@ -108,6 +129,21 @@ Dashboard runs on `http://127.0.0.1:3000`.
 - Add Chainlink credentials to `.env` after copying profile values.
 - Start backend + web, then monitor `/status` and `/logs`.
 - Full checklist: `SOAK_TEST_CHECKLIST.md`.
+
+### Soak helper scripts
+
+- `logs/soak_preflight.py`: verifies stale recorder processes are not running and checks tick freshness.
+- `logs/record_shadow_soak.py`: records periodic status snapshots to `logs/soak_shadow_<ts>.jsonl`.
+- `logs/analyze_shadow_soak.py`: summarizes latest soak window + candidate shadow decisions from service logs.
+
+Example:
+
+```bash
+source .venv/bin/activate
+python logs/soak_preflight.py
+SOAK_DURATION_SECONDS=2700 python logs/record_shadow_soak.py
+python logs/analyze_shadow_soak.py
+```
 
 ## Deploy on AWS Lightsail
 
