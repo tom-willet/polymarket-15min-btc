@@ -8,7 +8,7 @@ This repo now has two services:
 ## Architecture
 
 - Python service:
-  - Round scheduler activates only in final 3 minutes of every 15-minute round.
+  - Scheduler activates near market close to evaluate a single binary YES/NO outcome.
   - Websocket ticker stream feeds decision router.
   - Strategy router picks strategy modules (`momentum`, `mean_reversion`).
   - Executor currently logs actions (`DRY_RUN=true`).
@@ -19,7 +19,7 @@ This repo now has two services:
 - Next.js dashboard:
   - Polls `/api/agent/status` every 2.5s.
   - Next.js route proxies to Python API (`AGENT_API_BASE_URL`).
-  - Displays round timing, latest tick, last decision, and recent events.
+  - Displays market timing, latest tick, last decision, and recent events.
 
 ## Repo Layout
 
@@ -75,7 +75,7 @@ Dashboard runs on `http://127.0.0.1:3000`.
 - `POLYMARKET_BTC_STREAM` default `binance`.
 - `POLYMARKET_BTC_SYMBOL` default `BTCUSDT` (use `BTCUSD` for `chainlink` stream).
 - `POLYMARKET_BTC_WINDOW` default `15m`.
-- `AGENT_TEST_MODE` default `false` (when true, uses test-mode round timings below).
+- `AGENT_TEST_MODE` default `false` (when true, uses short test-mode market-cycle timings below).
 - `TEST_MODE_ROUND_SECONDS` default `120`.
 - `TEST_MODE_ACTIVATION_LEAD_SECONDS` default `100`.
 - `CHAINLINK_CANDLESTICK_LOGIN` required when `POLYMARKET_BTC_STREAM=chainlink`.
@@ -89,12 +89,12 @@ Dashboard runs on `http://127.0.0.1:3000`.
 - `POLYMARKET_MOVE_LOG_COOLDOWN_SECONDS` default `5.0`.
 - `POLY_WS_URL` required only for `POLYMARKET_BTC_STREAM=custom`.
 - `POLY_MARKET_SYMBOL` default `BTC`.
-- `ROUND_SECONDS` default `900`.
+- `ROUND_SECONDS` default `900` (market-cycle length in seconds).
 - `ACTIVATION_LEAD_SECONDS` default `180`.
 - `WS_PING_INTERVAL_SECONDS` default `15`.
 - `DRY_RUN` default `true`.
 - `AGENT_API_PORT` default `8080`.
-- `MAX_TRADES_PER_ROUND` default `2`.
+- `MAX_TRADES_PER_ROUND` default `2` (limit per market cycle).
 - `TRADE_COOLDOWN_SECONDS` default `8`.
 - `PAPER_TRADE_NOTIONAL_USD` default `25`.
 - `PAPER_ENTRY_SLIPPAGE_BPS` default `50`.
@@ -122,27 +122,39 @@ Dashboard runs on `http://127.0.0.1:3000`.
 
 - `AGENT_API_BASE_URL` default `http://127.0.0.1:8080`.
 
-## Soak Test Workflow
+## Validation Workflow (Canonical)
 
-- Fast sanity profile: `cp deploy/env/agent.fast-test.env .env`
-- Normal soak profile: `cp deploy/env/agent.normal.env .env`
-- Add Chainlink credentials to `.env` after copying profile values.
-- Start backend + web, then monitor `/status` and `/logs`.
-- Full checklist: `SOAK_TEST_CHECKLIST.md`.
+Default validation mode is a single-market, single-trade test:
 
-### Soak helper scripts
+1. Start service in live paper mode with `$1` notional.
+2. Wait for first opened trade.
+3. Enable kill-switch immediately.
+4. Wait for that exact trade to settle.
+5. Report full open/close JSON records for that trade ID.
+
+Full checklist: `SOAK_TEST_CHECKLIST.md`.
+
+### Validation helper scripts
 
 - `logs/soak_preflight.py`: verifies stale recorder processes are not running and checks tick freshness.
-- `logs/record_shadow_soak.py`: records periodic status snapshots to `logs/soak_shadow_<ts>.jsonl`.
-- `logs/analyze_shadow_soak.py`: summarizes latest soak window + candidate shadow decisions from service logs.
+- `logs/run_one_trade_market_test.py`: canonical one-trade capture; waits for first open, enables kill-switch, waits for close, prints full trade records.
+- `logs/run_next_market_one_trade.py`: waits for the next ET quarter-hour boundary, then runs the canonical one-trade capture.
+- `logs/summarize_paper_pnl.py`: prints JSON PnL summary for a selected window with recent closed trade details, including BTC entry/close context and model-vs-market probability fields.
+
+Trade records include `btc_price_to_beat_source` for reference provenance. Expected values are:
+
+- `chainlink_history_rows` (preferred)
+- `binance_klines` (fallback)
+- `live_tick_fallback` (fallback)
+- `round_open_fallback` (close-time fallback when older entries miss source)
 
 Example:
 
 ```bash
 source .venv/bin/activate
 python logs/soak_preflight.py
-SOAK_DURATION_SECONDS=2700 python logs/record_shadow_soak.py
-python logs/analyze_shadow_soak.py
+python logs/run_one_trade_market_test.py
+python logs/summarize_paper_pnl.py --start-ts-file logs/latest_one_trade_real_start_ts.txt --recent-count 1
 ```
 
 ## Deploy on AWS Lightsail
@@ -190,7 +202,7 @@ sudo systemctl start polymarket-agent polymarket-web
 
 - In-memory kill switch and trade blocking is wired before execution.
 - In-memory limits include:
-  - max trades per round
+  - max trades per market cycle
   - cooldown between trade executions
 - Admin endpoint for kill switch:
 

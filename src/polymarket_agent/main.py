@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from datetime import datetime, timezone
 import logging
 import time
 from uuid import uuid4
@@ -52,6 +53,42 @@ def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
+def _to_iso_utc(ts_value: float | None) -> str | None:
+    if not isinstance(ts_value, (int, float)):
+        return None
+    return datetime.fromtimestamp(float(ts_value), tz=timezone.utc).isoformat()
+
+
+def _normalize_chainlink_price(value: float) -> float:
+    if abs(value) >= 1e12:
+        return value / 1e18
+    return value
+
+
+def _model_prob_yes_from_action(action: str, confidence: float | None) -> float | None:
+    if not isinstance(confidence, (int, float)):
+        return None
+    bounded_confidence = _clamp(float(confidence), 0.0, 1.0)
+    if action == "BUY_YES":
+        return bounded_confidence
+    if action == "BUY_NO":
+        return 1.0 - bounded_confidence
+    return None
+
+
+def _expected_outcome_from_reference(
+    current_btc_price: float,
+    price_to_beat_btc: float | None,
+) -> str:
+    if not isinstance(price_to_beat_btc, (int, float)):
+        return "unknown"
+    if current_btc_price > float(price_to_beat_btc):
+        return "yes"
+    if current_btc_price < float(price_to_beat_btc):
+        return "no"
+    return "push"
+
+
 def _market_outcome_from_btc_prices(
     round_open_price: float,
     round_close_price: float,
@@ -92,6 +129,72 @@ async def _fetch_round_open_price(symbol: str, round_start_ts: float, round_seco
             if not isinstance(first, list) or len(first) < 2:
                 return None
             return float(first[1])
+    except (httpx.HTTPError, ValueError, TypeError):
+        return None
+
+
+async def _fetch_chainlink_round_open_price(
+    *,
+    symbol: str,
+    round_start_ts: float,
+    chainlink_base_url: str | None,
+    chainlink_login: str | None,
+    chainlink_password: str | None,
+) -> float | None:
+    if not chainlink_base_url or not chainlink_login or not chainlink_password:
+        return None
+
+    authorize_url = f"{chainlink_base_url.rstrip('/')}/api/v1/authorize"
+    history_url = f"{chainlink_base_url.rstrip('/')}/api/v1/history/rows"
+    start_epoch = int(round_start_ts)
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            auth_response = await client.post(
+                authorize_url,
+                data={"login": chainlink_login, "password": chainlink_password},
+            )
+            auth_response.raise_for_status()
+            auth_payload = auth_response.json()
+            token = auth_payload.get("d", {}).get("access_token")
+            if not isinstance(token, str) or not token:
+                return None
+
+            history_response = await client.get(
+                history_url,
+                params={
+                    "symbol": symbol,
+                    "resolution": "1m",
+                    "from": start_epoch,
+                    "to": start_epoch + 60,
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            history_response.raise_for_status()
+            history_payload = history_response.json()
+            candles = history_payload.get("candles")
+            if not isinstance(candles, list) or not candles:
+                return None
+
+            selected_candle = None
+            for candle in candles:
+                if isinstance(candle, list) and len(candle) >= 2:
+                    candle_ts = candle[0]
+                    if isinstance(candle_ts, (int, float)) and int(candle_ts) == start_epoch:
+                        selected_candle = candle
+                        break
+
+            if selected_candle is None:
+                for candle in candles:
+                    if isinstance(candle, list) and len(candle) >= 2 and isinstance(candle[0], (int, float)):
+                        selected_candle = candle
+                        break
+
+            if not isinstance(selected_candle, list) or len(selected_candle) < 2:
+                return None
+
+            open_price = float(selected_candle[1])
+            return _normalize_chainlink_price(open_price)
     except (httpx.HTTPError, ValueError, TypeError):
         return None
 
@@ -243,6 +346,7 @@ async def run() -> None:
         min_notional_usd=config.paper_min_notional_usd,
     )
     open_paper_trades: list[dict] = []
+    daily_trade_totals: dict[str, dict[str, float | int]] = {}
     odds_history: deque[tuple[float, float, float]] = deque(maxlen=240)
     price_change_anchor: float | None = None
     last_logged_opportunity: dict | None = None
@@ -263,6 +367,30 @@ async def run() -> None:
     ) -> None:
         remaining: list[dict] = []
 
+        def update_daily_totals(day_utc: str, pnl_usd: float, outcome: str) -> dict[str, float | int]:
+            daily = daily_trade_totals.setdefault(
+                day_utc,
+                {
+                    "closed_trades": 0,
+                    "wins": 0,
+                    "losses": 0,
+                    "invalid": 0,
+                    "realized_pnl_usd": 0.0,
+                },
+            )
+            daily["closed_trades"] = int(daily["closed_trades"]) + 1
+            if outcome == "win":
+                daily["wins"] = int(daily["wins"]) + 1
+            elif outcome == "loss":
+                daily["losses"] = int(daily["losses"]) + 1
+            elif outcome == "invalid":
+                daily["invalid"] = int(daily["invalid"]) + 1
+
+            daily["realized_pnl_usd"] = float(daily["realized_pnl_usd"]) + pnl_usd
+            return daily
+
+        day_utc = datetime.fromtimestamp(close_ts, tz=timezone.utc).strftime("%Y-%m-%d")
+
         if round_open_btc_price is None:
             for trade in open_paper_trades:
                 if trade["round_id"] != round_id:
@@ -275,26 +403,76 @@ async def run() -> None:
                     "round_id": round_id,
                     "action": trade["action"],
                     "strategy": trade.get("strategy"),
+                    "polymarket_slug": trade.get("polymarket_slug"),
                     "entry_price": trade["entry_price"],
                     "exit_price": trade["entry_price"],
                     "entry_ts": trade["entry_ts"],
+                    "entry_ts_iso_utc": trade.get("entry_ts_iso_utc") or _to_iso_utc(trade.get("entry_ts")),
                     "exit_ts": close_ts,
+                    "exit_ts_iso_utc": _to_iso_utc(close_ts),
+                    "round_close_ts": trade.get("round_close_ts"),
+                    "round_close_ts_iso_utc": trade.get("round_close_ts_iso_utc"),
+                    "open_seconds_to_close": trade.get("open_seconds_to_close"),
+                    "open_minutes_to_close": trade.get("open_minutes_to_close"),
+                    "trade_duration_seconds": (
+                        round(close_ts - float(trade["entry_ts"]), 3)
+                        if isinstance(trade.get("entry_ts"), (int, float))
+                        else None
+                    ),
+                    "trade_duration_minutes": (
+                        round((close_ts - float(trade["entry_ts"])) / 60.0, 4)
+                        if isinstance(trade.get("entry_ts"), (int, float))
+                        else None
+                    ),
                     "confidence": trade.get("confidence"),
+                    "confidence_pct": trade.get("confidence_pct"),
+                    "decision_score": trade.get("decision_score"),
+                    "decision_reason": trade.get("decision_reason"),
+                    "decision_signals": trade.get("decision_signals"),
                     "edge_strength": trade.get("edge_strength"),
                     "odds_alignment": trade.get("odds_alignment"),
                     "polymarket_yes_price": trade.get("polymarket_yes_price"),
                     "polymarket_no_price": trade.get("polymarket_no_price"),
+                    "polymarket_price_sum": trade.get("polymarket_price_sum"),
+                    "polymarket_price_gap": trade.get("polymarket_price_gap"),
+                    "btc_price_at_decision": trade.get("btc_price_at_decision"),
+                    "btc_price_at_entry": trade.get("btc_price_at_entry"),
+                    "btc_price_to_beat": trade.get("btc_price_to_beat"),
+                    "btc_price_to_beat_source": trade.get("btc_price_to_beat_source"),
+                    "btc_price_at_close": close_btc_price,
+                    "btc_move_abs_vs_price_to_beat": None,
+                    "btc_move_pct_vs_price_to_beat": None,
+                    "expected_outcome_if_closed_now": trade.get("expected_outcome_if_closed_now"),
+                    "market_implied_prob_yes": trade.get("market_implied_prob_yes"),
+                    "model_prob_yes_raw": trade.get("model_prob_yes_raw"),
+                    "model_prob_yes_adjusted": trade.get("model_prob_yes_adjusted"),
+                    "model_prob_no_adjusted": trade.get("model_prob_no_adjusted"),
+                    "edge_vs_market_implied_prob": trade.get("edge_vs_market_implied_prob"),
                     "market_outcome": "unknown",
                     "btc_round_open_price": None,
                     "btc_round_close_price": close_btc_price,
                     "outcome": "invalid",
+                    "stake_usd": float(trade.get("notional_usd", config.paper_trade_notional_usd)),
                     "return_pct": 0.0,
                     "gross_return_pct": 0.0,
                     "total_cost_pct": 0.0,
                     "gas_fees_usd": 0.0,
                     "adverse_selection_bps_applied": 0.0,
+                    "gross_pnl_usd": 0.0,
+                    "pnl_usd": 0.0,
                     "risk_assessment": trade.get("risk_assessment"),
                 }
+                daily = update_daily_totals(day_utc, 0.0, "invalid")
+                closing.update(
+                    {
+                        "day_utc": day_utc,
+                        "day_closed_trades": int(daily["closed_trades"]),
+                        "day_wins": int(daily["wins"]),
+                        "day_losses": int(daily["losses"]),
+                        "day_invalid": int(daily["invalid"]),
+                        "day_realized_pnl_usd": round(float(daily["realized_pnl_usd"]), 4),
+                    }
+                )
                 log_paper_entry(closing)
                 agent_state.add_event("warning", "paper_trade_closed_without_round_open", closing)
 
@@ -324,32 +502,108 @@ async def run() -> None:
             if market_outcome == "push":
                 settlement_price = float(trade["entry_price"])
 
+            price_to_beat_btc = trade.get("btc_price_to_beat")
+            price_to_beat_source = trade.get("btc_price_to_beat_source")
+            if not isinstance(price_to_beat_btc, (int, float)):
+                price_to_beat_btc = round_open_btc_price
+                if price_to_beat_source is None and isinstance(round_open_btc_price, (int, float)):
+                    price_to_beat_source = "round_open_fallback"
+
+            btc_move_abs_vs_price_to_beat = (
+                close_btc_price - float(price_to_beat_btc)
+                if isinstance(price_to_beat_btc, (int, float))
+                else None
+            )
+            btc_move_pct_vs_price_to_beat = (
+                ((close_btc_price - float(price_to_beat_btc)) / float(price_to_beat_btc)) * 100.0
+                if isinstance(price_to_beat_btc, (int, float)) and float(price_to_beat_btc) != 0.0
+                else None
+            )
+
             closing = {
                 "type": "paper_trade_closed",
                 "id": trade["id"],
                 "round_id": round_id,
                 "action": trade["action"],
                 "strategy": trade.get("strategy"),
+                "polymarket_slug": trade.get("polymarket_slug"),
                 "entry_price": trade["entry_price"],
                 "exit_price": settlement_price,
                 "entry_ts": trade["entry_ts"],
+                "entry_ts_iso_utc": trade.get("entry_ts_iso_utc") or _to_iso_utc(trade.get("entry_ts")),
                 "exit_ts": close_ts,
+                "exit_ts_iso_utc": _to_iso_utc(close_ts),
+                "round_close_ts": trade.get("round_close_ts"),
+                "round_close_ts_iso_utc": trade.get("round_close_ts_iso_utc"),
+                "open_seconds_to_close": trade.get("open_seconds_to_close"),
+                "open_minutes_to_close": trade.get("open_minutes_to_close"),
+                "trade_duration_seconds": (
+                    round(close_ts - float(trade["entry_ts"]), 3)
+                    if isinstance(trade.get("entry_ts"), (int, float))
+                    else None
+                ),
+                "trade_duration_minutes": (
+                    round((close_ts - float(trade["entry_ts"])) / 60.0, 4)
+                    if isinstance(trade.get("entry_ts"), (int, float))
+                    else None
+                ),
                 "confidence": trade.get("confidence"),
+                "confidence_pct": trade.get("confidence_pct"),
+                "decision_score": trade.get("decision_score"),
+                "decision_reason": trade.get("decision_reason"),
+                "decision_signals": trade.get("decision_signals"),
                 "edge_strength": trade.get("edge_strength"),
                 "odds_alignment": trade.get("odds_alignment"),
                 "polymarket_yes_price": trade.get("polymarket_yes_price"),
                 "polymarket_no_price": trade.get("polymarket_no_price"),
+                "polymarket_price_sum": trade.get("polymarket_price_sum"),
+                "polymarket_price_gap": trade.get("polymarket_price_gap"),
+                "btc_price_at_decision": trade.get("btc_price_at_decision"),
+                "btc_price_at_entry": trade.get("btc_price_at_entry"),
+                "btc_price_to_beat": price_to_beat_btc,
+                "btc_price_to_beat_source": price_to_beat_source,
+                "btc_price_at_close": close_btc_price,
+                "btc_move_abs_vs_price_to_beat": (
+                    round(float(btc_move_abs_vs_price_to_beat), 6)
+                    if isinstance(btc_move_abs_vs_price_to_beat, (int, float))
+                    else None
+                ),
+                "btc_move_pct_vs_price_to_beat": (
+                    round(float(btc_move_pct_vs_price_to_beat), 6)
+                    if isinstance(btc_move_pct_vs_price_to_beat, (int, float))
+                    else None
+                ),
+                "expected_outcome_if_closed_now": trade.get("expected_outcome_if_closed_now"),
+                "market_implied_prob_yes": trade.get("market_implied_prob_yes"),
+                "model_prob_yes_raw": trade.get("model_prob_yes_raw"),
+                "model_prob_yes_adjusted": trade.get("model_prob_yes_adjusted"),
+                "model_prob_no_adjusted": trade.get("model_prob_no_adjusted"),
+                "edge_vs_market_implied_prob": trade.get("edge_vs_market_implied_prob"),
                 "market_outcome": result.market_outcome,
                 "btc_round_open_price": round_open_btc_price,
                 "btc_round_close_price": close_btc_price,
                 "outcome": result.outcome,
+                "stake_usd": float(trade.get("notional_usd", config.paper_trade_notional_usd)),
                 "return_pct": round(result.return_pct, 4),
                 "gross_return_pct": round(result.gross_return_pct, 4),
                 "total_cost_pct": round(result.total_cost_pct, 4),
                 "gas_fees_usd": round(result.gas_fees_usd, 4),
                 "adverse_selection_bps_applied": result.adverse_selection_bps_applied,
+                "gross_pnl_usd": round(result.gross_pnl_usd, 4),
+                "pnl_usd": round(result.pnl_usd, 4),
                 "risk_assessment": trade.get("risk_assessment"),
             }
+            daily = update_daily_totals(day_utc, float(result.pnl_usd), result.outcome)
+            closing.update(
+                {
+                    "day_utc": day_utc,
+                    "day_closed_trades": int(daily["closed_trades"]),
+                    "day_wins": int(daily["wins"]),
+                    "day_losses": int(daily["losses"]),
+                    "day_invalid": int(daily["invalid"]),
+                    "day_realized_pnl_usd": round(float(daily["realized_pnl_usd"]), 4),
+                }
+            )
             log_paper_entry(closing)
             agent_state.add_event("info", "paper_trade_closed", closing)
 
@@ -367,6 +621,20 @@ async def run() -> None:
             round_start_ts=window.start_ts,
             round_seconds=config.round_seconds,
         )
+        round_open_btc_price_source: str | None = (
+            "binance_klines" if isinstance(round_open_btc_price, (int, float)) else None
+        )
+
+        chainlink_open_price = await _fetch_chainlink_round_open_price(
+            symbol=config.btc_symbol,
+            round_start_ts=window.start_ts,
+            chainlink_base_url=config.chainlink_candlestick_base_url,
+            chainlink_login=config.chainlink_candlestick_login,
+            chainlink_password=config.chainlink_candlestick_password,
+        )
+        if isinstance(chainlink_open_price, (int, float)):
+            round_open_btc_price = chainlink_open_price
+            round_open_btc_price_source = "chainlink_history_rows"
 
         agent_state.set_round(window.round_id, window.close_ts)
         agent_state.add_event("info", "round_activated", {"round_id": window.round_id})
@@ -383,6 +651,8 @@ async def run() -> None:
 
             if round_open_btc_price is None:
                 round_open_btc_price = tick.price
+                if round_open_btc_price_source is None:
+                    round_open_btc_price_source = "live_tick_fallback"
 
             if price_change_anchor is None:
                 price_change_anchor = tick.price
@@ -486,7 +756,8 @@ async def run() -> None:
                 continue
 
             action, context = decision
-            confidence = float(context.get("confidence", 0.0))
+            raw_confidence = float(context.get("confidence", 0.0))
+            confidence = raw_confidence
 
             if isinstance(yes_price, (float, int)) and isinstance(no_price, (float, int)):
                 supports_action = (
@@ -505,6 +776,31 @@ async def run() -> None:
                 context["polymarket_yes_price"] = float(yes_price)
                 context["polymarket_no_price"] = float(no_price)
                 context["polymarket_slug"] = odds_snapshot.get("slug")
+
+                model_prob_yes_raw = _model_prob_yes_from_action(action, raw_confidence)
+                model_prob_yes_adjusted = _model_prob_yes_from_action(action, confidence)
+                market_implied_prob_yes = float(yes_price)
+                context["model_prob_yes_raw"] = (
+                    round(float(model_prob_yes_raw), 6)
+                    if isinstance(model_prob_yes_raw, (int, float))
+                    else None
+                )
+                context["model_prob_yes_adjusted"] = (
+                    round(float(model_prob_yes_adjusted), 6)
+                    if isinstance(model_prob_yes_adjusted, (int, float))
+                    else None
+                )
+                context["model_prob_no_adjusted"] = (
+                    round(1.0 - float(model_prob_yes_adjusted), 6)
+                    if isinstance(model_prob_yes_adjusted, (int, float))
+                    else None
+                )
+                context["market_implied_prob_yes"] = round(market_implied_prob_yes, 6)
+                context["edge_vs_market_implied_prob"] = (
+                    round(float(model_prob_yes_adjusted) - market_implied_prob_yes, 6)
+                    if isinstance(model_prob_yes_adjusted, (int, float))
+                    else None
+                )
 
                 odds_filter_min_confidence = (
                     config.btc_updown_min_confidence_to_trade
@@ -708,14 +1004,36 @@ async def run() -> None:
                 "id": str(uuid4()),
                 "ts": now_ts,
                 "entry_ts": tick.ts,
+                "entry_ts_iso_utc": _to_iso_utc(tick.ts),
                 "round_id": window.round_id,
+                "round_close_ts": window.close_ts,
+                "round_close_ts_iso_utc": _to_iso_utc(window.close_ts),
+                "open_seconds_to_close": int(max(0, window.close_ts - now_ts)),
+                "open_minutes_to_close": round(max(0.0, window.close_ts - now_ts) / 60.0, 4),
                 "action": action,
                 "strategy": context.get("strategy"),
                 "confidence": context.get("confidence"),
+                "confidence_pct": (
+                    round(float(context.get("confidence")) * 100.0, 4)
+                    if isinstance(context.get("confidence"), (float, int))
+                    else None
+                ),
+                "decision_score": context.get("score"),
+                "decision_reason": context.get("reason"),
+                "decision_signals": context.get("signals"),
+                "btc_price_at_decision": tick.price,
+                "btc_price_at_entry": tick.price,
+                "btc_price_to_beat": round_open_btc_price,
+                "btc_price_to_beat_source": round_open_btc_price_source,
+                "expected_outcome_if_closed_now": _expected_outcome_from_reference(
+                    current_btc_price=tick.price,
+                    price_to_beat_btc=round_open_btc_price,
+                ),
                 "signal_price": float(market_entry_reference),
                 "entry_price": executed_entry_price,
                 "edge_strength": edge_strength_value,
                 "notional_usd": config.paper_trade_notional_usd,
+                "stake_usd": config.paper_trade_notional_usd,
                 "entry_slippage_bps": paper_simulation.entry_slippage_bps,
                 "effective_entry_slippage_bps": round(effective_slippage_bps, 4),
                 "expected_edge_bps": round(expected_edge_bps, 4),
@@ -724,8 +1042,36 @@ async def run() -> None:
                 "gas_fee_usd_per_side": paper_simulation.gas_fee_usd_per_side,
                 "adverse_selection_bps": paper_simulation.adverse_selection_bps,
                 "odds_alignment": context.get("odds_alignment", "unknown"),
+                "polymarket_slug": context.get("polymarket_slug"),
                 "polymarket_yes_price": context.get("polymarket_yes_price"),
                 "polymarket_no_price": context.get("polymarket_no_price"),
+                "market_implied_prob_yes": context.get("market_implied_prob_yes"),
+                "model_prob_yes_raw": context.get("model_prob_yes_raw"),
+                "model_prob_yes_adjusted": context.get("model_prob_yes_adjusted"),
+                "model_prob_no_adjusted": context.get("model_prob_no_adjusted"),
+                "edge_vs_market_implied_prob": context.get("edge_vs_market_implied_prob"),
+                "polymarket_price_sum": (
+                    round(
+                        float(context.get("polymarket_yes_price"))
+                        + float(context.get("polymarket_no_price")),
+                        6,
+                    )
+                    if isinstance(context.get("polymarket_yes_price"), (float, int))
+                    and isinstance(context.get("polymarket_no_price"), (float, int))
+                    else None
+                ),
+                "polymarket_price_gap": (
+                    round(
+                        abs(
+                            float(context.get("polymarket_yes_price"))
+                            - float(context.get("polymarket_no_price"))
+                        ),
+                        6,
+                    )
+                    if isinstance(context.get("polymarket_yes_price"), (float, int))
+                    and isinstance(context.get("polymarket_no_price"), (float, int))
+                    else None
+                ),
                 "risk_assessment": {
                     "kill_switch": False,
                     "risk_check": "ok",

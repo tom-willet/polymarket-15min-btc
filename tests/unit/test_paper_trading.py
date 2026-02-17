@@ -24,6 +24,8 @@ def test_evaluate_paper_trade_buy_yes_win() -> None:
 
     assert result.outcome == "win"
     assert round(result.return_pct, 4) == 150.0
+    assert round(result.gross_pnl_usd, 4) == 150.0
+    assert round(result.pnl_usd, 4) == 150.0
 
 
 def test_evaluate_paper_trade_buy_no_win() -> None:
@@ -75,7 +77,23 @@ def test_evaluate_paper_trade_applies_costs_and_adverse_selection() -> None:
     assert round(result.total_cost_pct, 4) == 0.4
     assert round(result.return_pct, 4) == 24.6
     assert round(result.gas_fees_usd, 4) == 0.1
+    assert round(result.gross_pnl_usd, 4) == 6.25
+    assert round(result.pnl_usd, 4) == 6.15
     assert result.adverse_selection_bps_applied == 0.0
+
+
+def test_evaluate_paper_trade_invalid_has_zero_pnl() -> None:
+    result = evaluate_paper_trade(
+        "BUY_YES",
+        entry_price=1.0,
+        market_outcome="yes",
+        notional_usd=25.0,
+        simulation=PaperTradeSimulationConfig(min_notional_usd=1.0),
+    )
+
+    assert result.outcome == "invalid"
+    assert result.gross_pnl_usd == 0.0
+    assert result.pnl_usd == 0.0
 
 
 def test_compute_effective_entry_slippage_bps_dynamic_and_capped() -> None:

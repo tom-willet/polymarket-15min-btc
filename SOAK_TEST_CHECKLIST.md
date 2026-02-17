@@ -1,71 +1,78 @@
-# Soak Test Checklist
+# Single-Market Validation Checklist
 
-Use this runbook after changes to streaming, decisioning, risk, or logging.
+Use this runbook for all validation work unless explicitly told otherwise.
 
-## 1) Choose profile
+## Goal
 
-- Fast sanity run (10-15 minutes):
-  - `cp deploy/env/agent.fast-test.env .env`
-- Normal soak run (30-60 minutes):
-  - `cp deploy/env/agent.normal.env .env`
+Run exactly one market-style validation cycle:
 
-Then add your Chainlink credentials into `.env`:
+1. Start now.
+2. Allow one `$1` paper trade.
+3. Lock trading immediately after the first open.
+4. Wait for settlement.
+5. Review full opened and closed records for that exact trade ID.
 
-- `CHAINLINK_CANDLESTICK_LOGIN`
-- `CHAINLINK_CANDLESTICK_PASSWORD`
-- `CHAINLINK_CANDLESTICK_BASE_URL`
-
-## 2) Start services
+## 1) Start service in one-trade mode
 
 From repo root:
 
 ```bash
+pkill -f 'src.polymarket_agent.service|record_shadow_soak.py' || true
 source .venv/bin/activate
-python -m src.polymarket_agent.service
+
+ts=$(date +%s)
+echo "$ts" > logs/latest_one_trade_real_start_ts.txt
+LOG="logs/one_trade_real_${ts}.log"
+echo "$LOG" > logs/latest_shadow_log_path.txt
+
+AGENT_TEST_MODE=false \
+STRATEGY_MODE=btc_updown \
+BTC_UPDOWN_LIVE_ENABLED=true \
+BTC_UPDOWN_SHADOW_MODE=false \
+MAX_TRADES_PER_ROUND=1 \
+PAPER_TRADE_NOTIONAL_USD=1 \
+BTC_UPDOWN_MIN_CONFIDENCE_TO_TRADE=0 \
+BTC_UPDOWN_MIN_SCORE_TO_TRADE=-1 \
+BTC_UPDOWN_MAX_ENTRY_PRICE=0.99 \
+python -m src.polymarket_agent.service >> "$LOG" 2>&1
 ```
 
-In another terminal:
+## 2) Run canonical one-trade capture
+
+In a separate terminal:
 
 ```bash
-cd web
-npm run dev
+source .venv/bin/activate
+python logs/run_one_trade_market_test.py
 ```
 
-## 3) Live checks during soak
+What this does:
 
-- Dashboard: `http://127.0.0.1:3000`
-- Logs page: `http://127.0.0.1:3000/logs`
-- API status: `http://127.0.0.1:8080/status`
+- Waits for the first opened paper trade after `latest_one_trade_real_start_ts.txt`.
+- Enables kill-switch immediately.
+- Waits for that exact trade ID to close.
+- Prints full open and close JSON records.
 
-Quick freshness probe (every 2 seconds):
+## 3) Required output for every report
+
+Always include:
+
+- `trade_id`
+- Full `paper_trade_opened` record
+- Full `paper_trade_closed` record
+- `btc_price_to_beat` and `btc_price_to_beat_source` from both records
+
+Never summarize with only counts when discussing a specific validation trade.
+
+## 4) If it fails
+
+- No trade opened in timeout:
 
 ```bash
-python3 - <<'PY'
-import json, time, urllib.request
-
-def snap():
-    s=json.load(urllib.request.urlopen('http://127.0.0.1:8080/status',timeout=5))
-    return s.get('latest_price'), s.get('latest_tick_ts')
-
-p1,t1=snap(); time.sleep(2); p2,t2=snap()
-print('tick_live', p1!=p2 and t1!=t2)
-print('p1',p1,'p2',p2)
-PY
+curl -sS http://127.0.0.1:8080/status | python -m json.tool
 ```
 
-## 4) Pass/fail gates
-
-All must pass:
-
-1. Freshness: `Last updated` on `/logs` stays under ~10s behind wall clock.
-2. Liveness: `latest_price` and `latest_tick_ts` keep changing.
-3. Signal quality: no repeated decision spam for identical state.
-4. Timeline quality: focused rows are informative (not empty; not flooded).
-5. Trade lifecycle visibility: open/close rows appear with strategy/confidence/outcome.
-
-## 5) If it fails
-
-- Restart backend:
+- Service down:
 
 ```bash
 pkill -f 'src.polymarket_agent.service' || true
@@ -73,25 +80,10 @@ source .venv/bin/activate
 python -m src.polymarket_agent.service
 ```
 
-- If Next.js is stale/corrupt:
+- Reset kill-switch after test:
 
 ```bash
-cd web
-pkill -f 'next dev' || true
-rm -rf .next
-npm run dev
+curl -X POST http://127.0.0.1:8080/admin/kill-switch \
+  -H 'content-type: application/json' \
+  -d '{"enabled": false}'
 ```
-
-- Reduce noise (in `.env`):
-  - Increase `POLYMARKET_MOVE_LOG_COOLDOWN_SECONDS` (e.g. `20 -> 30`)
-  - Increase `POLYMARKET_MOVE_THRESHOLD_PCT` (e.g. `3.0 -> 4.0`)
-
-## 6) Capture feedback snapshot
-
-After soak, record:
-
-- Profile used (`fast-test` or `normal`)
-- Run duration
-- Count of opportunities/opened/closed/wins/losses
-- Any stale gaps and restart incidents
-- Suggested new defaults for threshold/cooldown

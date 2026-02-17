@@ -17,6 +17,8 @@ class PaperTradeResult:
     total_cost_pct: float
     gas_fees_usd: float
     adverse_selection_bps_applied: float
+    gross_pnl_usd: float
+    pnl_usd: float
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,8 @@ def evaluate_paper_trade(
             total_cost_pct=0.0,
             gas_fees_usd=0.0,
             adverse_selection_bps_applied=0.0,
+            gross_pnl_usd=0.0,
+            pnl_usd=0.0,
         )
 
     if notional_usd < simulation.min_notional_usd:
@@ -144,6 +148,8 @@ def evaluate_paper_trade(
             total_cost_pct=0.0,
             gas_fees_usd=0.0,
             adverse_selection_bps_applied=0.0,
+            gross_pnl_usd=0.0,
+            pnl_usd=0.0,
         )
 
     normalized_outcome = market_outcome.strip().lower()
@@ -156,6 +162,8 @@ def evaluate_paper_trade(
             total_cost_pct=0.0,
             gas_fees_usd=0.0,
             adverse_selection_bps_applied=0.0,
+            gross_pnl_usd=0.0,
+            pnl_usd=0.0,
         )
 
     payout_per_share = 0.0
@@ -174,6 +182,8 @@ def evaluate_paper_trade(
             total_cost_pct=0.0,
             gas_fees_usd=0.0,
             adverse_selection_bps_applied=0.0,
+            gross_pnl_usd=0.0,
+            pnl_usd=0.0,
         )
 
     raw_return = (payout_per_share - entry_price) / entry_price
@@ -196,6 +206,9 @@ def evaluate_paper_trade(
     else:
         outcome = "flat"
 
+    gross_pnl_usd = gross_return * notional_usd
+    pnl_usd = net_return * notional_usd
+
     return PaperTradeResult(
         outcome=outcome,
         market_outcome=normalized_outcome,
@@ -204,6 +217,8 @@ def evaluate_paper_trade(
         total_cost_pct=total_cost_pct * 100,
         gas_fees_usd=gas_fees_usd,
         adverse_selection_bps_applied=adverse_selection_bps_applied,
+        gross_pnl_usd=gross_pnl_usd,
+        pnl_usd=pnl_usd,
     )
 
 

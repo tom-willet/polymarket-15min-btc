@@ -54,7 +54,6 @@ def snapshot() -> dict:
 
     return {
         "ts": now,
-        "active_round_id": status.get("active_round_id"),
         "last_tick_age_sec": round(last_tick_age, 2) if last_tick_age is not None else None,
         "paper_entries": len(trades),
         "opportunities": len(opportunities),
