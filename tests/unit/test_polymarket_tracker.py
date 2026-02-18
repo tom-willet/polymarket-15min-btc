@@ -69,3 +69,41 @@ def test_polymarket_move_event_requires_material_change() -> None:
     assert first is not None
     assert small_move is None
     assert big_move is not None
+
+
+def test_extract_ordered_token_ids_from_outcomes_and_clob_ids() -> None:
+    tracker = PolymarketOddsTracker(ws_url="wss://example.test/ws")
+    payload = {
+        "slug": "btc-updown-15m-123",
+        "outcomes": '["Yes", "No"]',
+        "clobTokenIds": '["200", "100"]',
+    }
+
+    token_ids = tracker._extract_ordered_token_ids(payload)
+
+    assert token_ids[:2] == ["200", "100"]
+
+
+def test_extract_ordered_token_ids_from_up_down_outcomes() -> None:
+    tracker = PolymarketOddsTracker(ws_url="wss://example.test/ws")
+    payload = {
+        "slug": "btc-updown-15m-123",
+        "outcomes": '["Up", "Down"]',
+        "clobTokenIds": '["up-token", "down-token"]',
+    }
+
+    token_ids = tracker._extract_ordered_token_ids(payload)
+
+    assert token_ids[:2] == ["up-token", "down-token"]
+
+
+def test_extract_ordered_token_ids_fallback_is_deterministic() -> None:
+    tracker = PolymarketOddsTracker(ws_url="wss://example.test/ws")
+    payload = {
+        "slug": "btc-updown-15m-123",
+        "tokens": ["300000000", "100000000", "200000000"],
+    }
+
+    token_ids = tracker._extract_ordered_token_ids(payload)
+
+    assert token_ids == ["100000000", "200000000", "300000000"]

@@ -13,8 +13,6 @@ type EventRow = {
 type AgentStatus = {
   started_ts: number;
   kill_switch_enabled: boolean;
-  active_round_id: number | null;
-  round_close_ts: number | null;
   latest_price: number | null;
   latest_tick_ts: number | null;
   last_decision: Record<string, unknown> | null;
@@ -116,9 +114,12 @@ function fmtTs(ts: number | null): string {
   return new Date(ts * 1000).toLocaleString();
 }
 
-function extractPricePoint(payload: unknown, ts: number): PricePoint | null {
-  const candidates: number[] = [];
-  let tokenId: string | null = null;
+function extractPricePoint(
+  payload: unknown,
+  ts: number,
+  allowedTokenIds: string[] = [],
+): PricePoint | null {
+  const updates: PricePoint[] = [];
 
   const visit = (value: unknown) => {
     if (value == null) return;
@@ -128,52 +129,40 @@ function extractPricePoint(payload: unknown, ts: number): PricePoint | null {
       return;
     }
 
-    if (typeof value === "object") {
-      const record = value as Record<string, unknown>;
-      for (const [key, entry] of Object.entries(record)) {
-        const normalized = key.toLowerCase();
+    if (typeof value !== "object") return;
 
-        if (
-          tokenId === null &&
-          (normalized === "asset_id" ||
-            normalized === "token_id" ||
-            normalized === "asset" ||
-            normalized === "token") &&
-          typeof entry === "string"
-        ) {
-          tokenId = entry;
-        }
+    const record = value as Record<string, unknown>;
+    const assetId =
+      typeof record.asset_id === "string" ? record.asset_id : null;
+    const priceValue = record.price ?? record.p;
 
-        if (
-          normalized === "price" ||
-          normalized === "p" ||
-          normalized === "best_bid" ||
-          normalized === "best_ask" ||
-          normalized === "bid" ||
-          normalized === "ask"
-        ) {
-          const parsed = asNumber(entry);
-          if (parsed !== null) candidates.push(parsed);
-        }
+    if (assetId && priceValue !== undefined) {
+      const parsedPrice = asNumber(priceValue);
+      if (parsedPrice !== null && parsedPrice >= 0 && parsedPrice <= 1) {
+        updates.push({ ts, price: parsedPrice, tokenId: assetId });
+      }
+    }
 
-        visit(entry);
+    for (const child of Object.values(record)) {
+      if (typeof child === "object" && child !== null) {
+        visit(child);
       }
     }
   };
 
   visit(payload);
 
-  const bounded = candidates.find((value) => value >= 0 && value <= 1.5);
-  if (bounded !== undefined) {
-    return { ts, price: bounded, tokenId };
+  if (!updates.length) return null;
+
+  if (allowedTokenIds.length) {
+    for (let index = updates.length - 1; index >= 0; index -= 1) {
+      if (allowedTokenIds.includes(updates[index].tokenId ?? "")) {
+        return updates[index];
+      }
+    }
   }
 
-  const fallback = candidates.find((value) => value > 0);
-  if (fallback !== undefined) {
-    return { ts, price: fallback, tokenId };
-  }
-
-  return null;
+  return updates[updates.length - 1];
 }
 
 export function Dashboard() {
@@ -355,7 +344,9 @@ export function Dashboard() {
             const text = JSON.stringify(parsed);
             pendingPreview =
               text.length > 240 ? `${text.slice(0, 240)}...` : text;
-            pendingPoint = extractPricePoint(parsed, nowTs) ?? pendingPoint;
+            pendingPoint =
+              extractPricePoint(parsed, nowTs, currentMarket?.tokenIds ?? []) ??
+              pendingPoint;
           } catch {
             const text = String(event.data);
             pendingPreview =
@@ -438,11 +429,6 @@ export function Dashboard() {
       }
     };
   }, []);
-
-  const secsToClose = useMemo(() => {
-    if (!data?.round_close_ts) return null;
-    return Math.max(0, Math.floor(data.round_close_ts - Date.now() / 1000));
-  }, [data?.round_close_ts]);
 
   const latestCandle = useMemo(() => {
     if (!data?.events?.length) return null;
@@ -681,11 +667,15 @@ export function Dashboard() {
   return (
     <main>
       <h1>Polymarket BTC 15m Agent</h1>
-      <p>
-        Live monitor for round timing, ticker updates, and strategy decisions.
-      </p>
+      <p>Live monitor for ticker updates and strategy decisions.</p>
       <p>
         <Link href="/logs">View live logs timeline</Link>
+      </p>
+      <p>
+        <Link href="/trades">Open trades explorer</Link>
+      </p>
+      <p>
+        <Link href="/runs">Open continuous runs</Link>
       </p>
 
       <div className="panel">
@@ -719,12 +709,6 @@ export function Dashboard() {
               {isRestartingBackend ? "restarting..." : "restart backend"}
             </button>
           </div>
-          <div>Active round</div>
-          <div className="code">{data?.active_round_id ?? "-"}</div>
-          <div>Closes at</div>
-          <div className="code">{fmtTs(data?.round_close_ts ?? null)}</div>
-          <div>Seconds to close</div>
-          <div className="code">{secsToClose ?? "-"}</div>
           <div>Latest price</div>
           <div className="code">{data?.latest_price ?? "-"}</div>
           <div>Last tick</div>

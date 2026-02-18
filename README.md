@@ -139,6 +139,7 @@ Full checklist: `SOAK_TEST_CHECKLIST.md`.
 - `logs/soak_preflight.py`: verifies stale recorder processes are not running and checks tick freshness.
 - `logs/run_one_trade_market_test.py`: canonical one-trade capture; waits for first open, enables kill-switch, waits for close, prints full trade records.
 - `logs/run_next_market_one_trade.py`: waits for the next ET quarter-hour boundary, then runs the canonical one-trade capture.
+- `logs/run_continuous_one_trade_per_market.py`: continuously runs one trade per market across consecutive markets for a configurable duration; captures full open/close records for each cycle and keeps kill-switch discipline per market.
 - `logs/summarize_paper_pnl.py`: prints JSON PnL summary for a selected window with recent closed trade details, including BTC entry/close context and model-vs-market probability fields.
 
 Trade records include `btc_price_to_beat_source` for reference provenance. Expected values are:
@@ -155,6 +156,9 @@ source .venv/bin/activate
 python logs/soak_preflight.py
 python logs/run_one_trade_market_test.py
 python logs/summarize_paper_pnl.py --start-ts-file logs/latest_one_trade_real_start_ts.txt --recent-count 1
+
+# Continuous validation example: 4 hours, one trade per market
+python logs/run_continuous_one_trade_per_market.py --hours 4
 ```
 
 ## Deploy on AWS Lightsail

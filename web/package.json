@@ -9,13 +9,14 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "14.2.31",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "next": "^16.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@types/node": "22.17.1",
-    "@types/react": "18.3.23",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "typescript": "5.9.2"
   }
 }

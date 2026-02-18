@@ -133,7 +133,7 @@ def test_load_config_allows_chainlink_with_credentials(monkeypatch: pytest.Monke
     assert cfg.chainlink_candlestick_base_url == "https://priceapi.dataengine.chain.link"
 
 
-def test_load_config_applies_test_mode_round_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_config_ignores_test_mode_round_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AGENT_TEST_MODE", "true")
     monkeypatch.setenv("ROUND_SECONDS", "900")
     monkeypatch.setenv("ACTIVATION_LEAD_SECONDS", "180")
@@ -142,6 +142,6 @@ def test_load_config_applies_test_mode_round_overrides(monkeypatch: pytest.Monke
 
     cfg = load_config()
 
-    assert cfg.agent_test_mode is True
-    assert cfg.round_seconds == 60
-    assert cfg.activation_lead_seconds == 50
+    assert cfg.agent_test_mode is False
+    assert cfg.round_seconds == 900
+    assert cfg.activation_lead_seconds == 180

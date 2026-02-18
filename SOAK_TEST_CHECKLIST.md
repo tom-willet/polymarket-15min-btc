@@ -53,6 +53,22 @@ What this does:
 - Waits for that exact trade ID to close.
 - Prints full open and close JSON records.
 
+## 2b) Continuous mode (one trade per market, several hours)
+
+For multi-hour validation while keeping one trade per market:
+
+```bash
+source .venv/bin/activate
+python logs/run_continuous_one_trade_per_market.py --hours 4
+```
+
+What this does:
+
+- Repeats market cycles continuously until time limit (or optional market cap).
+- Allows exactly one open per market, then immediately enables kill-switch for that market.
+- Waits for close, re-enables trading, and rolls to the next market without manual intervention.
+- Stores every cycle's full `opened_full` and `closed_full` records in one JSON output.
+
 ## 3) Required output for every report
 
 Always include:

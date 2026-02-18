@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 import websockets
@@ -159,13 +160,104 @@ class PolymarketOddsTracker:
             return None
 
         payload = response.json()
-        token_set: set[str] = set()
-        self._collect_token_ids(payload, token_set)
-        token_ids = list(token_set)
+        token_ids = self._extract_ordered_token_ids(payload)
         if len(token_ids) < 2:
             return None
 
         return token_ids[:2]
+
+    def _extract_ordered_token_ids(self, payload: object) -> list[str]:
+        market: dict[str, Any] | None = None
+        if isinstance(payload, list):
+            first = payload[0] if payload else None
+            market = first if isinstance(first, dict) else None
+        elif isinstance(payload, dict):
+            market = payload
+
+        if not market:
+            token_set: set[str] = set()
+            self._collect_token_ids(payload, token_set)
+            return sorted(token_set)
+
+        outcome_map = self._extract_outcome_token_map(market)
+        yes_token = outcome_map.get("yes")
+        no_token = outcome_map.get("no")
+        if yes_token and no_token:
+            return [yes_token, no_token]
+
+        token_set: set[str] = set()
+        self._collect_token_ids(market, token_set)
+        fallback = sorted(token_set)
+        if len(fallback) >= 2:
+            logger.warning("[Polymarket WS] Falling back to sorted token IDs for market mapping")
+        return fallback
+
+    def _extract_outcome_token_map(self, market: dict[str, Any]) -> dict[str, str]:
+        outcomes = self._coerce_list(market.get("outcomes"))
+        clob_token_ids = self._coerce_list(market.get("clobTokenIds"))
+
+        outcome_map: dict[str, str] = {}
+        if outcomes and clob_token_ids and len(outcomes) == len(clob_token_ids):
+            for index, outcome in enumerate(outcomes):
+                normalized = self._normalize_outcome_label(outcome)
+                token_id = self._coerce_token_id(clob_token_ids[index])
+                if normalized in {"yes", "no"} and token_id:
+                    outcome_map[normalized] = token_id
+            if "yes" in outcome_map and "no" in outcome_map:
+                return outcome_map
+
+        for key in ("tokens", "tokenInfo", "outcomeTokenMap"):
+            entries = self._coerce_list(market.get(key))
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                normalized = self._normalize_outcome_label(
+                    entry.get("outcome")
+                    or entry.get("name")
+                    or entry.get("label")
+                    or entry.get("title")
+                )
+                token_id = (
+                    self._coerce_token_id(entry.get("clobTokenId"))
+                    or self._coerce_token_id(entry.get("tokenId"))
+                    or self._coerce_token_id(entry.get("token_id"))
+                    or self._coerce_token_id(entry.get("asset_id"))
+                )
+                if normalized in {"yes", "no"} and token_id:
+                    outcome_map[normalized] = token_id
+
+        return outcome_map
+
+    def _coerce_list(self, value: object) -> list[object]:
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            trimmed = value.strip()
+            if trimmed.startswith("[") and trimmed.endswith("]"):
+                try:
+                    parsed = json.loads(trimmed)
+                except json.JSONDecodeError:
+                    return []
+                return parsed if isinstance(parsed, list) else []
+        return []
+
+    def _normalize_outcome_label(self, value: object) -> str | None:
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip().lower()
+        if normalized in {"yes", "up", "higher", "above"}:
+            return "yes"
+        if normalized in {"no", "down", "lower", "below"}:
+            return "no"
+        return None
+
+    def _coerce_token_id(self, value: object) -> str | None:
+        if isinstance(value, str):
+            trimmed = value.strip()
+            return trimmed or None
+        if isinstance(value, int):
+            return str(value)
+        return None
 
     def _collect_token_ids(self, value: object, output: set[str]) -> None:
         if value is None:

@@ -87,15 +87,11 @@ def load_config() -> Config:
         if not chainlink_candlestick_base_url:
             raise ValueError("CHAINLINK_CANDLESTICK_BASE_URL is required when POLYMARKET_BTC_STREAM is 'chainlink'")
 
-    agent_test_mode = _bool_from_env(os.getenv("AGENT_TEST_MODE"), False)
+    agent_test_mode = False
     test_mode_round_seconds = int(os.getenv("TEST_MODE_ROUND_SECONDS", "120"))
     test_mode_activation_lead_seconds = int(os.getenv("TEST_MODE_ACTIVATION_LEAD_SECONDS", "100"))
     round_seconds = int(os.getenv("ROUND_SECONDS", "900"))
     activation_lead_seconds = int(os.getenv("ACTIVATION_LEAD_SECONDS", "180"))
-
-    if agent_test_mode:
-        round_seconds = test_mode_round_seconds
-        activation_lead_seconds = test_mode_activation_lead_seconds
 
     return Config(
         poly_ws_url=poly_ws_url,

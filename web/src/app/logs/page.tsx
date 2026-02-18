@@ -35,6 +35,8 @@ const FOCUS_EVENT_TYPES = new Set([
   "price_move_3pct",
 ]);
 
+const INITIAL_CAPITAL_USD = 100;
+
 function fmtTs(ts: number | null): string {
   if (!ts) return "-";
   return new Date(ts * 1000).toLocaleString();
@@ -142,6 +144,10 @@ export default function LogsPage() {
     const closed = paperLogs.filter(
       (item) => item.type === "paper_trade_closed",
     );
+    const realizedPnlUsd = closed
+      .map((item) => Number(item.pnl_usd ?? 0))
+      .filter((value) => Number.isFinite(value))
+      .reduce((total, value) => total + value, 0);
     const wins = closed.filter(
       (item) => String(item.outcome ?? "") === "win",
     ).length;
@@ -168,6 +174,9 @@ export default function LogsPage() {
       wins,
       losses,
       avgReturnPct,
+      realizedPnlUsd,
+      initialCapitalUsd: INITIAL_CAPITAL_USD,
+      currentPaperBalanceUsd: INITIAL_CAPITAL_USD + realizedPnlUsd,
       latestTs,
     };
   }, [paperLogs, events]);
@@ -214,6 +223,14 @@ export default function LogsPage() {
           <div className="code">
             {summary.wins} / {summary.losses}
           </div>
+          <div>Initial Capital</div>
+          <div className="code">${summary.initialCapitalUsd.toFixed(2)}</div>
+          <div>Current (Paper) Balance</div>
+          <div className="code">
+            ${summary.currentPaperBalanceUsd.toFixed(2)}
+          </div>
+          <div>Realized PnL</div>
+          <div className="code">${summary.realizedPnlUsd.toFixed(2)}</div>
           <div>Avg return %</div>
           <div className="code">
             {summary.avgReturnPct === null

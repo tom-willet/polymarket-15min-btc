@@ -14,6 +14,81 @@ function getCandidateSlugs(nowTs: number): string[] {
   return candidates.map((ts) => `btc-updown-15m-${ts}`);
 }
 
+function coerceList(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+  }
+  return [];
+}
+
+function normalizeOutcome(value: unknown): "yes" | "no" | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (["yes", "up", "higher", "above"].includes(normalized)) return "yes";
+  if (["no", "down", "lower", "below"].includes(normalized)) return "no";
+  return null;
+}
+
+function coerceTokenId(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
+
+function extractOutcomeTokenMap(
+  market: Record<string, unknown>,
+): Record<string, string> {
+  const map: Record<string, string> = {};
+
+  const outcomes = coerceList(market.outcomes);
+  const clobTokenIds = coerceList(market.clobTokenIds);
+  if (outcomes.length && outcomes.length === clobTokenIds.length) {
+    for (let index = 0; index < outcomes.length; index += 1) {
+      const outcome = normalizeOutcome(outcomes[index]);
+      const tokenId = coerceTokenId(clobTokenIds[index]);
+      if (outcome && tokenId) {
+        map[outcome] = tokenId;
+      }
+    }
+  }
+
+  for (const key of ["tokens", "tokenInfo", "outcomeTokenMap"]) {
+    const entries = coerceList(market[key]);
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const record = entry as Record<string, unknown>;
+      const outcome = normalizeOutcome(
+        record.outcome ?? record.name ?? record.label ?? record.title,
+      );
+      const tokenId =
+        coerceTokenId(record.clobTokenId) ??
+        coerceTokenId(record.tokenId) ??
+        coerceTokenId(record.token_id) ??
+        coerceTokenId(record.asset_id);
+
+      if (outcome && tokenId) {
+        map[outcome] = tokenId;
+      }
+    }
+  }
+
+  return map;
+}
+
 function collectTokenIds(value: unknown, output: Set<string>): void {
   if (value == null) return;
 
@@ -72,10 +147,23 @@ async function lookupSlug(
   if (!response.ok) return null;
 
   const payload = (await response.json()) as unknown;
+  const market = Array.isArray(payload)
+    ? (payload[0] as Record<string, unknown> | undefined)
+    : (payload as Record<string, unknown>);
+
+  const outcomeTokenMap = market ? extractOutcomeTokenMap(market) : {};
+  const yesToken = outcomeTokenMap.yes;
+  const noToken = outcomeTokenMap.no;
+  if (yesToken && noToken) {
+    return {
+      slug,
+      tokenIds: [yesToken, noToken],
+    };
+  }
+
   const tokenSet = new Set<string>();
   collectTokenIds(payload, tokenSet);
-
-  const tokenIds = [...tokenSet];
+  const tokenIds = [...tokenSet].sort();
   if (tokenIds.length < 2) return null;
 
   return {
