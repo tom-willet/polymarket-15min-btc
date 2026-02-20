@@ -55,6 +55,16 @@ class Config:
     btc_updown_kelly_fraction: float
     btc_updown_max_trade_size_usd: float
     btc_updown_min_trade_size_usd: float
+    llm_review_enabled: bool
+    llm_review_provider: str
+    llm_review_model: str
+    llm_review_timeout_seconds: int
+    llm_review_max_retries: int
+    llm_review_version: str
+    llm_review_min_abs_score: float
+    llm_review_require_trade: bool
+    llm_review_save_input_payload: bool
+    llm_review_payload_retention_days: int
 
 
 
@@ -201,4 +211,14 @@ def load_config() -> Config:
         btc_updown_min_trade_size_usd=float(
             os.getenv("BTC_UPDOWN_MIN_TRADE_SIZE_USD", "1")
         ),
+        llm_review_enabled=_bool_from_env(os.getenv("LLM_REVIEW_ENABLED"), False),
+        llm_review_provider=os.getenv("LLM_REVIEW_PROVIDER", "openai").strip().lower(),
+        llm_review_model=os.getenv("LLM_REVIEW_MODEL", "gpt-5.2").strip(),
+        llm_review_timeout_seconds=int(os.getenv("LLM_REVIEW_TIMEOUT_SECONDS", "20")),
+        llm_review_max_retries=int(os.getenv("LLM_REVIEW_MAX_RETRIES", "2")),
+        llm_review_version=os.getenv("LLM_REVIEW_VERSION", "v1.0").strip(),
+        llm_review_min_abs_score=float(os.getenv("LLM_REVIEW_MIN_ABS_SCORE", "0.25")),
+        llm_review_require_trade=_bool_from_env(os.getenv("LLM_REVIEW_REQUIRE_TRADE"), False),
+        llm_review_save_input_payload=_bool_from_env(os.getenv("LLM_REVIEW_SAVE_INPUT_PAYLOAD"), True),
+        llm_review_payload_retention_days=int(os.getenv("LLM_REVIEW_PAYLOAD_RETENTION_DAYS", "30")),
     )

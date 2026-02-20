@@ -23,6 +23,7 @@ from .paper_trading import (
     evaluate_paper_trade,
 )
 from .polymarket import PolymarketOddsTracker
+from .review.runtime import enqueue_market_close_review
 from .risk import RiskGuard, RiskLimits
 from .scheduler import RoundScheduler
 from .state import agent_state
@@ -702,6 +703,15 @@ async def run() -> None:
                 logger.info("Round %s closed; waiting for next window", window.round_id)
                 settle_round(window.round_id, tick.price, tick.ts, round_open_btc_price)
                 agent_state.add_event("info", "round_closed", {"round_id": window.round_id})
+                odds_snapshot = agent_state.get_polymarket_odds_snapshot()
+                market_slug = str(odds_snapshot.get("slug") or config.market_symbol)
+                await enqueue_market_close_review(
+                    market_id=market_slug,
+                    market_slug=market_slug,
+                    round_id=window.round_id,
+                    round_open_ts=datetime.fromtimestamp(window.start_ts, tz=timezone.utc),
+                    round_close_ts=datetime.fromtimestamp(window.close_ts, tz=timezone.utc),
+                )
                 last_round_executed = window.round_id
                 break
 

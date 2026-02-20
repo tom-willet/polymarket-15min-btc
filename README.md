@@ -1,3 +1,32 @@
+## Speckit
+
+#### Add to a project
+
+```bash
+uvx --from git+https://github.com/github/spec-kit.git specify init --here
+```
+
+#### Upgrade Speckit
+
+```bash
+uv tool install specify-cli --force --from git+https://github.com/github/spec-kit.git
+specify init --here --force --ai copilot
+```
+
+#### Commands
+
+````bash
+
+/speckit.constitution    # Establish project principles
+/speckit.specify         # Create baseline specification
+/speckit.clarify         # Ask structured questions to de-risk ambiguous areas before planning
+/speckit.plan            # Create implementation plan
+# /speckit.checklist       # Generate quality checklists to validate requirements completeness, clarity, and consistency
+/speckit.tasks           # Generate actionable tasks
+/speckit.analyze         # Cross-artifact consistency & alignment report
+/speckit.implement       # Execute implementation
+
+
 # Polymarket BTC 15m Agent + Next.js Dashboard
 
 This repo now has two services:
@@ -46,7 +75,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 python -m src.polymarket_agent.service
-```
+````
 
 Agent API will run on `http://127.0.0.1:8080` by default.
 
@@ -121,6 +150,34 @@ Dashboard runs on `http://127.0.0.1:3000`.
 ### Web (`web/.env.local`)
 
 - `AGENT_API_BASE_URL` default `http://127.0.0.1:8080`.
+
+### End-of-market LLM review (`.env`)
+
+- `LLM_REVIEW_ENABLED` default `false`.
+- `LLM_REVIEW_PROVIDER` default `openai`.
+- `LLM_REVIEW_MODEL` default `gpt-5.2`.
+- `LLM_REVIEW_TIMEOUT_SECONDS` default `20`.
+- `LLM_REVIEW_MAX_RETRIES` default `2`.
+- `LLM_REVIEW_VERSION` default `v1.0`.
+- `LLM_REVIEW_MIN_ABS_SCORE` default `0.25`.
+- `LLM_REVIEW_REQUIRE_TRADE` default `false`.
+- `LLM_REVIEW_SAVE_INPUT_PAYLOAD` default `true`.
+- `LLM_REVIEW_PAYLOAD_RETENTION_DAYS` default `30`.
+
+### Review APIs
+
+- `GET /reviews/latest`
+- `GET /reviews?limit=50&status=succeeded`
+- `GET /reviews/{id}`
+- `POST /admin/reviews/replay`
+
+Replay example:
+
+```bash
+curl -X POST http://127.0.0.1:8080/admin/reviews/replay \
+  -H "content-type: application/json" \
+  -d '{"market_id":"btc-up-15m","round_close_ts":"2026-02-18T15:15:00Z","review_version":"v1.0"}'
+```
 
 ## Validation Workflow (Canonical)
 

@@ -1,0 +1,36 @@
+# VCS and metadata
+.git/
+.gitignore
+
+# Docker files
+Dockerfile*
+.dockerignore
+
+# Python artifacts
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Node artifacts
+node_modules/
+web/node_modules/
+web/.next/
+
+# Build outputs and reports
+dist/
+build/
+coverage/
+
+# Environment and logs
+.env*
+*.log
+*.log*
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

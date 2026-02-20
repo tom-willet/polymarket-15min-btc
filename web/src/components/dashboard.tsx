@@ -677,6 +677,9 @@ export function Dashboard() {
       <p>
         <Link href="/runs">Open continuous runs</Link>
       </p>
+      <p>
+        <Link href="/reviews">Open market reviews</Link>
+      </p>
 
       <div className="panel">
         <span className={`badge ${err ? "" : "ok"}`}>

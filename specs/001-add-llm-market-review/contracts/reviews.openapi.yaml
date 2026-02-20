@@ -1,0 +1,192 @@
+openapi: 3.1.0
+info:
+  title: Market LLM Review API
+  version: 1.0.0
+  description: |
+    Read and replay APIs for end-of-market LLM review artifacts.
+    v1 assumes trusted-network deployment and no application-layer authentication.
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /reviews/latest:
+    get:
+      summary: Get latest review summary
+      operationId: getLatestReview
+      responses:
+        "200":
+          description: Latest review returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewSummary"
+        "404":
+          description: No reviews found
+  /reviews:
+    get:
+      summary: List review metadata
+      operationId: listReviews
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReviewStatus"
+      responses:
+        "200":
+          description: Paginated review list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReviewSummary"
+                  next_cursor:
+                    type: string
+                    nullable: true
+                required: [items]
+  /reviews/{id}:
+    get:
+      summary: Get full review detail
+      operationId: getReviewById
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Full review detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewDetail"
+        "404":
+          description: Review not found
+  /admin/reviews/replay:
+    post:
+      summary: Replay review generation for a closed market window
+      operationId: replayReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplayRequest"
+      responses:
+        "202":
+          description: Replay accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: boolean
+                  review_key:
+                    type: object
+                    properties:
+                      market_id:
+                        type: string
+                      round_close_ts:
+                        type: string
+                        format: date-time
+                      review_version:
+                        type: string
+                required: [accepted, review_key]
+        "400":
+          description: Invalid request
+components:
+  schemas:
+    ReviewStatus:
+      type: string
+      enum: [queued, running, succeeded, failed]
+    ReviewSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        market_id:
+          type: string
+        market_slug:
+          type: string
+        round_close_ts:
+          type: string
+          format: date-time
+        review_version:
+          type: string
+        status:
+          $ref: "#/components/schemas/ReviewStatus"
+        provider:
+          type: string
+        model:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - market_id
+        - market_slug
+        - round_close_ts
+        - review_version
+        - status
+        - created_at
+        - updated_at
+    ReviewDetail:
+      allOf:
+        - $ref: "#/components/schemas/ReviewSummary"
+        - type: object
+          properties:
+            analysis_json:
+              type: object
+              additionalProperties: true
+              nullable: true
+            analysis_markdown:
+              type: string
+              nullable: true
+            error_message:
+              type: string
+              nullable: true
+            latency_ms:
+              type: integer
+              nullable: true
+            token_in:
+              type: integer
+              nullable: true
+            token_out:
+              type: integer
+              nullable: true
+            cost_usd_estimate:
+              type: number
+              nullable: true
+    ReplayRequest:
+      type: object
+      properties:
+        market_id:
+          type: string
+        round_close_ts:
+          type: string
+          format: date-time
+        review_version:
+          type: string
+          default: v1.0
+      required:
+        - market_id
+        - round_close_ts
